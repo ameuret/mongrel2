@@ -59,7 +59,7 @@ char *test_Dir_resolve_file()
     mu_assert(rec == NULL, "Should NOT find short paths.");
 
     rec = Dir_resolve_file(test, bfromcstr("/"), bfromcstr("/%E2%82%ACtonn%C3%A4nt%2520.tx%C3%BE"));
-        mu_assert(rec != NULL, "Should find file with a percent-encoded name.");
+    mu_assert(rec != NULL, "Should find file with a percent-encoded name.");
     
     rec = Dir_resolve_file(test, bfromcstr("/"), bfromcstr("/%E2%82%ACtonn%C3%A4nt%2520/present.txt"));
     mu_assert(rec != NULL, "Should find file inside percent-encoded path.");
@@ -75,8 +75,22 @@ char *test_Dir_resolve_file()
 
     rec = Dir_resolve_file(test, bfromcstr("/"), bfromcstr("/sample.json"));
     mu_assert(rec == NULL, "Should not get something from a bad base directory.");
+    mu_assert_log("Could not stat", "Should log helpful warning about missing dir.");
 
     Dir_destroy(test);
+
+    chmod("tests/accessDenied/", 00664 );
+    Dir *unreachable = Dir_create(
+            bfromcstr("tests/accessDenied/"),
+            bfromcstr("sample.html"),
+            bfromcstr("text/plain"),
+            0);
+
+    rec = Dir_resolve_file(unreachable, bfromcstr("/"), bfromcstr("/sample.html"));
+    mu_assert_log("Unable to resolve", "Should log helpful warning about unreachable file.");
+    mu_assert_log("Cannot enter one of the directories", "Should log helpful info on access denial.");
+    Dir_destroy(unreachable);
+    chmod("tests/accessDenied/", 00775 );
 
     return NULL;
 }
@@ -190,6 +204,7 @@ char * all_tests() {
     mu_run_test(test_Dir_serve_big_files);
     mu_run_test(test_Dir_find_file_isdir);
 
+    mu_suite_shutdown();
     return NULL;
 }
 

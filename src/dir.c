@@ -200,6 +200,7 @@ Dir *Dir_create(bstring base, bstring index_file, bstring default_ctype, int cac
     check(bchar(dir->base, 0) != '/', "Don't start the base with / in %s, that will fail when not in chroot.", bdata(base));
     check(bchar(dir->base, blength(dir->base) - 1) == '/', "End directory base with / in %s or it won't work right.", bdata(base));
 
+  
     dir->index_file = bstrcpy(index_file);
     dir->default_ctype = bstrcpy(default_ctype);
 
@@ -397,6 +398,22 @@ FileRecord *FileRecord_cache_check(Dir *dir, bstring path)
     return file;
 }
 
+void diagnose_access_failure(Dir *dir, bstring path, bstring target)
+{
+    struct stat stat_info;    
+    int stat_res;
+
+    stat_res=stat(bdata(dir->normalized_base), &stat_info);
+    if(stat_res)
+      log_warn("Could not stat path %s while resolving %s.", bdata(dir->normalized_base), bdata(path));
+    else
+    {
+      log_warn("Unable to resolve %s in existing %s.", bdata(target), bdata(dir->normalized_base));
+      if(access(bdata(dir->normalized_base),X_OK))
+        log_warn("Cannot enter one of the directories leading to %s. Check directory permissions", bdata(dir->normalized_base));
+    }
+  
+}
 
 FileRecord *Dir_resolve_file(Dir *dir, bstring prefix, bstring path)
 {
@@ -459,6 +476,8 @@ FileRecord *Dir_resolve_file(Dir *dir, bstring prefix, bstring path)
     return file;
 
 error:
+    diagnose_access_failure(dir, path, target);
+
     bdestroy(target);
     FileRecord_release(file);
     return NULL;
@@ -578,6 +597,9 @@ int Dir_serve_file(Dir *dir, Request *req, Connection *conn)
         file = Dir_resolve_file(dir, prefix, path);
         resp = Dir_calculate_response(req, file);
 
+        if(!resp)
+          log_err("calc failed for %s", bdata(path));
+        
         if(resp) {
             rc = Response_send_status(conn, resp);
             check_debug(rc == blength(resp), "Failed to send error response on file serving.");

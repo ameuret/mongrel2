@@ -1,5 +1,7 @@
 echo "Running unit tests:"
 
+rm -f tests/tests.log 
+  
 for i in tests/*_tests
 do
     if test -f $i

@@ -222,7 +222,7 @@ int attempt_chroot_drop(Server *srv)
     if(Unixy_chroot(srv->chroot) == 0) {
         log_info("All loaded up, time to turn into a server.");
         log_info("-- Starting " VERSION ". Copyright (C) Zed A. Shaw. Licensed BSD.\n");
-        log_info("-- Look in %s for startup messages and errors.", bdata(srv->error_log));
+        log_info("-- Look in %s%s for further startup messages and errors.", bdata(srv->chroot), bdata(srv->error_log));
 
         rc = Unixy_daemonize();
         check(rc == 0, "Failed to daemonize, looks like you're hosed.");
