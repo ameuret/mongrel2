@@ -126,7 +126,7 @@ error:
     return -1;
 }
 
-static int ssl_fdsend_wrapper(void *p_iob, unsigned char *ubuffer, size_t len)
+static int ssl_fdsend_wrapper(void *p_iob, const unsigned char *ubuffer, size_t len)
 {
     IOBuf *iob = (IOBuf *) p_iob;
     return fdsend(iob->fd, (char *) ubuffer, len);
@@ -157,6 +157,7 @@ static ssize_t ssl_send(IOBuf *iob, char *buffer, int len)
 {
     int sent = 0;
     int total = 0;
+
     check(iob->use_ssl, "IOBuf not set up to use ssl");
 
     if(!iob->handshake_performed) {
@@ -177,6 +178,7 @@ static ssize_t ssl_send(IOBuf *iob, char *buffer, int len)
     };
 
     return total;
+
 error:
     return -1;
 }
@@ -596,11 +598,13 @@ char *IOBuf_read_all(IOBuf *buf, int len, int retries)
         data = IOBuf_read(buf, len, &nread);
 
         check_debug(data, "Read error from socket.");
+
         assert(nread <= len && "Invalid nread size (too much) on IOBuf read.");
 
         if(nread == len) {
             break;
         } else {
+            check(!IOBuf_closed(buf), "Socket closed during IOBuf_read_all.")
             fdwait(buf->fd, 'r');
         }
     }
@@ -630,14 +634,13 @@ int IOBuf_stream(IOBuf *from, IOBuf *to, int total)
     int remain = total;
     int avail = 0;
     int rc = 0;
-    char *data = NULL;
 
     if(from->len > to->len) IOBuf_resize(to, from->len);
 
     while(remain > 0) {
         need = remain <= from->len ? remain : from->len;
 
-        data = IOBuf_read(from, need, &avail);
+        IOBuf_read(from, need, &avail);
         check_debug(avail > 0, "Nothing in read buffer.");
 
         rc = IOBuf_send_all(to, IOBuf_start(from), avail);

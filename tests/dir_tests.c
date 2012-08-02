@@ -63,7 +63,7 @@ char *test_Dir_resolve_file()
     
     rec = Dir_resolve_file(test, bfromcstr("/"), bfromcstr("/%E2%82%ACtonn%C3%A4nt%2520/present.txt"));
     mu_assert(rec != NULL, "Should find file inside percent-encoded path.");
-    
+
     Dir_destroy(test);
 
     test = Dir_create(

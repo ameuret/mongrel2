@@ -61,7 +61,7 @@ const char *RESPONSE_FORMAT = "HTTP/1.1 200 OK\r\n"
     "\r\n\r\n";
 
 const char *DIR_REDIRECT_FORMAT = "HTTP/1.1 301 Moved Permanently\r\n"
-    "Location: http://%s%s/\r\n"
+    "Location: //%s%s/\r\n"
     "Content-Length: 0\r\n"
     "Server: " VERSION
     "\r\n\r\n";
@@ -264,29 +264,29 @@ void FileRecord_destroy(FileRecord *file)
 
 static inline char *url_decode(const char *in, char *out)
 {
-  char *cur; /* will seek % in input */
+  const char *cur; /* will seek % in input */
   char d1; /* will contain candidate for 1st digit */
   char d2; /* will contain candidate for 2nd digit */
   char *res = out; /* just for convienience */
-  
+
   if(!in) {
     *out = '\0';
     return res;
   }
 
   cur = in;
-  
+
   while(*cur) {
     d1 = *(cur+1);
     d2 = *(cur+2);
-    
+
     /* One character left in input */
     if(!d1) {
       *out = *cur;
       *(out+1) = '\0';
       return res;
     }
-    
+
     /* Two characters left in input */
     if(!d2) {
       *out = *cur;
@@ -294,12 +294,12 @@ static inline char *url_decode(const char *in, char *out)
       *(out+2) = '\0';
       return res;
     }
-   
+
     /* Legal escape sequence */
     if(*cur=='%' && isxdigit(d1) && isxdigit(d2)) {
       d1 = tolower(d1);
       d2 = tolower(d2);
-        
+
       if( d1 <= '9' )
         d1 = d1 - '0';
       else
@@ -308,9 +308,9 @@ static inline char *url_decode(const char *in, char *out)
         d2 = d2 - '0';
       else
         d2 = d2 - 'a' + 10;
-  
+
       *out = 16 * d1 + d2;
-      
+
       out += 1;
       cur += 3;
     }
@@ -320,7 +320,7 @@ static inline char *url_decode(const char *in, char *out)
       cur += 1;
     }
   }
-  
+
   *out = '\0';
   return res;
 }
@@ -335,7 +335,7 @@ static inline int normalize_path(bstring target)
         path_buf = calloc(PATH_MAX+1, 1);
         check_mem(path_buf);
     }
-    
+
     url_decode((const char *)(bdata(target)), path_buf);
     bassigncstr(target, path_buf);
 

@@ -324,11 +324,14 @@ int connection_http_to_handler(Connection *conn)
     if(is_websocket(conn)) {
         bstring wsKey = Request_get(conn->req, &WS_SEC_WS_KEY);
         bstring response= websocket_challenge(wsKey);
+        conn->handler = handler;
 
-        Response_send_status(conn,response);
+        //Response_send_status(conn,response);
+        bdestroy(conn->req->request_method);
+        conn->req->request_method=bfromcstr("WEBSOCKET_HANDSHAKE");
+        Connection_send_to_handler(conn, handler, bdata(response), blength(response));
         bdestroy(response);
 
-        conn->handler = handler;
         bdestroy(conn->req->request_method);
         conn->req->request_method=bfromcstr("WEBSOCKET");
         return REQ_SENT;
@@ -852,18 +855,18 @@ void Connection_task(void *v)
 {
     Connection *conn = (Connection *)v;
     int i = 0;
-    int next = 0;
+    int next = OPEN;
 
     State_init(&conn->state, &CONN_ACTIONS);
 
-    for(i = 0, next = OPEN; next != CLOSE; i++) {
+    while(1) {
         if(Filter_activated()) {
             next = Filter_run(next, conn);
             check(next >= CLOSE && next < EVENT_END,
                     "!!! Invalid next event[%d]: %d from filter!", i, next);
-
-            if(next == CLOSE) break;
         }
+
+        if(next == CLOSE) break;
 
         next = State_exec(&conn->state, next, (void *)conn);
 
@@ -873,6 +876,8 @@ void Connection_task(void *v)
         if(conn->iob && !conn->iob->closed) {
             Register_ping(IOBuf_fd(conn->iob));
         }
+
+        i++;
     }
 
 error: // fallthrough
@@ -900,7 +905,7 @@ int Connection_deliver(Connection *conn, bstring buf)
     check(conn->iob != NULL, "There's no IOBuffer to send to, Tell Zed.");
     /* The deliver task will free the buffer */
     rc = Connection_deliver_enqueue(conn,b64_buf);
-    check_debug(rc == blength(b64_buf)+1, "Failed to write entire message to conn %d", IOBuf_fd(conn->iob));
+    check_debug(rc == 0, "Failed to write message to conn %d", IOBuf_fd(conn->iob));
 
     return 0;
 
