@@ -257,6 +257,7 @@ void FileRecord_destroy(FileRecord *file)
             bdestroy(file->request_path);
         }
         bdestroy(file->full_path);
+        bdestroy(file->logical_path);
         // file->content_type is not owned by us
         free(file);
     }
@@ -352,10 +353,29 @@ error:
 
 static inline int Dir_lazy_normalize_base(Dir *dir)
 {
+    struct stat base_st;
+  
+    /* Even if base has previously been normalized we need to check if
+       it is still referencing the same physical path (symlink switch scenario) */
+    if(dir->normalized_base != NULL) {
+      check(stat(bdata(dir->base), &base_st) == 0, "Failed to stat base path %s",
+            bdata(dir->base));
+      if( dir->base_inode != base_st.st_ino)
+      {
+        debug("Dir base changed, forcing refresh for %s", bdata(dir->base));
+        bdestroy(dir->normalized_base);
+        dir->normalized_base = NULL;
+      }
+    }
+  
     if(dir->normalized_base == NULL) {
         dir->normalized_base = bstrcpy(dir->base);
         check(normalize_path(dir->normalized_base) == 0,
-            "Failed to normalize base path: %s", bdata(dir->normalized_base));
+              "Failed to normalize base path: %s", bdata(dir->normalized_base));
+
+        check(stat(bdata(dir->normalized_base), &base_st) == 0,
+              "Failed to stat normalized_base: %s", bdata(dir->normalized_base));
+        dir->base_inode = base_st.st_ino;
 
         debug("Lazy normalized base path %s into %s", bdata(dir->base), bdata(dir->normalized_base));
     }
@@ -387,11 +407,18 @@ FileRecord *FileRecord_cache_check(Dir *dir, bstring path)
                     file->sb.st_ino != sb.st_ino ||
                     file->sb.st_dev != sb.st_dev 
             ) {
+              log_warn("File checks failed, expiring cache entry (%s).", p);
                 Cache_evict_object(dir->fr_cache, file);
                 file = NULL;
             } else {
+              log_warn("File checks passed, refreshing cache entry (%s -> %s).", bdata(file->request_path),p);
                 file->loaded = now;
             }
+        }
+        else
+        {
+          log_warn("Skipping file checks due to cache ttl (%s).", p);
+          log_warn("File loaded %ds ago, cache ttl is %ds", difftime(now, file->loaded), dir->cache_ttl);
         }
     }
 
@@ -419,6 +446,8 @@ FileRecord *Dir_resolve_file(Dir *dir, bstring prefix, bstring path)
 {
     FileRecord *file = NULL;
     bstring target = NULL;
+    bstring logical_path = NULL;
+    struct stat actual;
 
     check(blength(prefix) <= blength(path), 
             "Path '%s' is shorter than prefix '%s', not allowed.", bdata(path), bdata(prefix));
@@ -429,9 +458,15 @@ FileRecord *Dir_resolve_file(Dir *dir, bstring prefix, bstring path)
     file = FileRecord_cache_check(dir, path);
 
     if(file) {
+        check(stat(bdata(file->logical_path), &actual) == 0,
+              "Failed to stat logical_path: %s", bdata(file->logical_path));
+      if( file->sb.st_ino == actual.st_ino) {
         // TODO: double check this gives the right users count
         file->users++;
         return file;
+      }
+      else
+        debug("Cache entry not matching current path stat, will refresh cache for %s.", bdata(file->logical_path));
     }
 
     check(bchar(prefix, 0) == '/', "Route '%s' pointing to directory must have prefix with leading '/'", bdata(prefix));
@@ -456,7 +491,24 @@ FileRecord *Dir_resolve_file(Dir *dir, bstring prefix, bstring path)
     }
 
     check_mem(target);
+    /**********/
+    /* duplicate of above block just to build logical_path using
+       dir->base instead of dir->normalized_base */
+    if(bchar(path, blength(path) - 1) == '/') {
+        // a directory so figure out the index file
+        logical_path = bformat("%s%s%s",
+                         bdata(dir->base),
+                         bdataofs(path, blength(prefix)),
+                         bdata(dir->index_file));
+    } else if(biseq(prefix, path)) {
+        logical_path = bformat("%s%s", bdata(dir->base), bdata(path));
+    } else {
+        logical_path = bformat("%s%s", bdata(dir->base), bdataofs(path, blength(prefix)));
+    }
 
+    check_mem(logical_path);
+    /**********/
+  
     check_debug(normalize_path(target) == 0,
             "Failed to normalize target path: %s", bdata(target));
 
@@ -468,9 +520,12 @@ FileRecord *Dir_resolve_file(Dir *dir, bstring prefix, bstring path)
     file = Dir_find_file(target, dir->default_ctype);
     check_debug(file, "Error opening file: %s", bdata(target));
 
+    file->logical_path = logical_path;
+  
     // Increment the user count because we're adding it to the cache
     file->users++;
     file->request_path = bstrcpy(path);
+    debug("Adding file record to cache (%s -> %s)", bdata(file->request_path), bdata(file->full_path));
     Cache_add(dir->fr_cache, file);
 
     return file;

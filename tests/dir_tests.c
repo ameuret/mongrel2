@@ -90,8 +90,34 @@ char *test_Dir_resolve_file()
     mu_assert_log("Unable to resolve", "Should log helpful warning about unreachable file.");
     mu_assert_log("Cannot enter one of the directories", "Should log helpful info on access denial.");
     Dir_destroy(unreachable);
+    /* Restore test dir permission to keep git happy */
     chmod("tests/accessDenied/", 00775 );
+    errno = 0; /* Keep test logs cleaner */
 
+    log_info("Test symlink switch scenario");
+    unlink("tests/current");
+    symlink("older", "tests/current");
+    Dir *symlinked = Dir_create(
+            bfromcstr("tests/current/"),
+            bfromcstr("gadget.txt"),
+            bfromcstr("test/plain"),
+            0);
+    mu_assert(test != NULL, "Failed to make symlink test dir.");
+
+    FileRecord *older_rec = Dir_resolve_file(symlinked, bfromcstr("/"), bfromcstr("/gadget.txt"));
+  
+    log_info("Waiting for cache to expire");
+  /* Make sure cache ttl has expired */
+    sleep(1);
+  
+    unlink("tests/current");
+    symlink("newer", "tests/current");
+
+    FileRecord *newer_rec = Dir_resolve_file(symlinked, bfromcstr("/"), bfromcstr("/gadget.txt"));
+  
+    mu_assert(newer_rec->sb.st_ino != older_rec->sb.st_ino, "Should not serve stale files after symlink update.");
+
+    Dir_destroy(symlinked);
     return NULL;
 }
 

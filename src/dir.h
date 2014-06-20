@@ -65,6 +65,7 @@ typedef struct FileRecord {
     bstring header;
     bstring request_path;
     bstring full_path;
+    bstring logical_path;
     bstring etag;
     struct stat sb;
     off_t file_size;
@@ -75,6 +76,7 @@ typedef struct Dir {
     Cache *fr_cache;
     bstring base;
     bstring normalized_base;
+    ino_t base_inode;
     bstring index_file;
     bstring default_ctype;
     int cache_ttl;
